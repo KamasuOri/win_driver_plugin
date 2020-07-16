@@ -10,11 +10,16 @@ Description:
     AccessType, MethodType and a usable C define.
     *  Attempts to locate the driver dispatch handler by doing some basic CFG analysis and checking
        offsets at which function pointers are loaded into memory.
+       
+Changelog:
+    2019-11-23 - Alexander Pick - Fixes for IDA 7.x
+       
 """
 
 import idc
 import idaapi
 import idautils
+import ida_nalt
 
 import win_driver_plugin.device_finder as device_finder
 import win_driver_plugin.ioctl_decoder as ioctl_decoder
@@ -68,17 +73,17 @@ def make_comment(pos, string):
     If the address is already commented append the new comment to the existing comment
     """
     
-    current_comment = idc.Comment(pos)
+    current_comment = idc.get_cmt(pos,0)
     if not current_comment:
-        idc.MakeComm(pos, string)
+        idc.set_cmt(pos, string, 0)
     elif string not in current_comment:
-        idc.MakeComm(pos, current_comment + " " + string)
+        idc.set_cmt(pos, current_comment + " " + string, 0)
 
 
 def get_operand_value(addr):
     """Returns the value of the second operand to the instruction at `addr` masked to be a 32 bit value"""
 
-    return idc.GetOperandValue(addr, 1) & 0xffffffff
+    return idc.get_operand_value(addr, 1) & 0xffffffff
 
 class IOCTLTracker:
     """A simple container to keep track of decoded IOCTL codes and codes marked as invalid"""
@@ -96,14 +101,14 @@ class IOCTLTracker:
         self.ioctls.remove((addr, value))
 		
     def print_table(self, ioctls):
-        print "%-10s | %-10s | %-42s | %-10s | %-22s | %s" % ("Address", "IOCTL Code", "Device", "Function", "Method", "Access")
+        print("%-10s | %-10s | %-42s | %-10s | %-22s | %s" % ("Address", "IOCTL Code", "Device", "Function", "Method", "Access"))
         for (addr, ioctl_code) in ioctls:
             function = ioctl_decoder.get_function(ioctl_code)
             device_name, device_code = ioctl_decoder.get_device(ioctl_code)
             method_name, method_code = ioctl_decoder.get_method(ioctl_code)
             access_name, access_code = ioctl_decoder.get_access(ioctl_code)
             all_vars = (addr, ioctl_code, device_name, device_code, function, method_name, method_code, access_name, access_code)
-            print "0x%-8X | 0x%-8X | %-31s 0x%-8X | 0x%-8X | %-17s %-4d | %s (%d)" % all_vars
+            print("0x%-8X | 0x%-8X | %-31s 0x%-8X | 0x%-8X | %-17s %-4d | %s (%d)" % all_vars)
 
 
 def find_all_ioctls():
@@ -114,17 +119,17 @@ def find_all_ioctls():
     
     ioctls = []
     # Find the currently selected function and get a list of all of it's basic blocks
-    addr = idc.ScreenEA()
+    addr = idc.get_screen_ea()
     f = idaapi.get_func(addr)
     fc = idaapi.FlowChart(f, flags=idaapi.FC_PREDS)
     for block in fc:
         # grab the last two instructions in the block 
-        last_inst = idc.PrevHead(block.endEA)
+        last_inst = idc.PrevHead(block.end_ea)
         penultimate_inst = idc.PrevHead(last_inst)
         # If the penultimate instruction is cmp or sub against an immediate value immediately preceding a 'jz' 
         # then it's a decent guess that it's an IOCTL code (if this is a dispatch function)
-        if idc.GetMnem(penultimate_inst) in ['cmp', 'sub'] and idc.GetOpType(penultimate_inst, 1) == 5:
-            if idc.GetMnem(last_inst) == 'jz':
+        if idc.print_insn_mnem(penultimate_inst) in ['cmp', 'sub'] and idc.get_operand_type(penultimate_inst, 1) == 5:
+            if idc.print_insn_mnem(last_inst) == 'jz':
                 value = get_operand_value(penultimate_inst)
                 ioctls.append((penultimate_inst, value))
                 ioctl_tracker.add_ioctl(penultimate_inst, value)
@@ -149,7 +154,7 @@ def decode_angr():
 	"""Attempts to locate all the IOCTLs in a function and decode them all using symbolic execution"""
 	
 	path = idaapi.get_input_file_path()
-	addr = idc.ScreenEA()
+	addr = idc.get_screen_ea()
 	ioctls = angr_analysis.angr_find_ioctls(path, addr)
 	track_ioctls(ioctls)
 
@@ -159,8 +164,8 @@ def get_position_and_translate():
     then adds the C define for the code as a comment and prints a summary table of all decoded IOCTL codes.
     """
 
-    pos = idc.ScreenEA()
-    if idc.GetOpType(pos, 1) != 5:   # Check the second operand to the instruction is an immediate
+    pos = idc.get_screen_ea()
+    if idc.get_operand_type(pos, 1) != 5:   # Check the second operand to the instruction is an immediate
         return
     
     value = get_operand_value(pos)
@@ -186,12 +191,12 @@ def find_dispatch_by_struct_index():
         if flags & idc.FUNC_LIB:
             continue
         func = idaapi.get_func(function_ea)
-        addr = func.startEA
-        while addr < func.endEA:
-            if idc.GetMnem(addr) == 'mov':
-                if '+70h' in idc.GetOpnd(addr, 0) and idc.GetOpType(addr, 1) == 5:
-                    out.add(idc.GetOpnd(addr, 1))
-            addr = idc.NextHead(addr)
+        addr = func.start_ea
+        while addr < func.end_ea:
+            if idc.print_insn_mnem(addr) == 'mov':
+                if '+70h' in idc.print_operand(addr, 0) and idc.get_operand_type(addr, 1) == 5:
+                    out.add(idc.print_operand(addr, 1))
+            addr = idc.next_head(addr)
     return out
 
 
@@ -211,12 +216,12 @@ def find_dispatch_by_cfg():
         # skip library functions
         if flags & idc.FUNC_LIB:
             continue
-        f_name = idc.GetFunctionName(function_ea)
+        f_name = idc.get_func_name(function_ea)
         # For each of the incoming references
         for ref_ea in idautils.CodeRefsTo(function_ea, 0):
             called.add(f_name)
             # Get the name of the referring function
-            caller_name = idc.GetFunctionName(ref_ea)
+            caller_name = idc.get_func_name(ref_ea)
             if caller_name not in caller.keys():
                 caller[caller_name] = 1
             else:
@@ -242,19 +247,19 @@ def find_dispatch_function():
     if len(index_funcs) == 0:
         cfg_finds_to_print = min(len(cfg_funcs),3)
         for i in range(cfg_finds_to_print):
-            print "Based off of basic CFG analysis the potential dispatch functions are: " + cfg_funcs[i]
+            print("Based off of basic CFG analysis the potential dispatch functions are: " + cfg_funcs[i])
     elif len(index_funcs) == 1:
         func = index_funcs.pop()
         if func in cfg_funcs:
-            print "The likely dispatch function is: " + func
+            print("The likely dispatch function is: " + func)
         else:
-            print "Based off of the offset it is loaded at a potential dispatch function is: " + func
-            print "Based off of basic CFG analysis the likely dispatch function is: " + cfg_funcs[0]
+            print("Based off of the offset it is loaded at a potential dispatch function is: " + func)
+            print("Based off of basic CFG analysis the likely dispatch function is: " + cfg_funcs[0])
     else:
-        print "Potential dispatch functions: "
+        print("Potential dispatch functions: ")
         for i in index_funcs:
             if i in cfg_funcs:
-                print i
+                print(i)
 
 def get_pool_tags():
 	""" Display a list of the pool tags in use by the current driver.
@@ -305,13 +310,13 @@ class InvalidHandler(ActionHandler):
     """
     
     def activate(self, ctx):
-        pos = idc.ScreenEA()
+        pos = idc.get_screen_ea()
         # Get current comment for this instruction and remove the C define from it, if present
-        comment = idc.Comment(pos)
+        comment = idc.get_cmt(pos, 0)
         code = get_operand_value(pos)
         define = ioctl_decoder.get_define(code)
         comment = comment.replace(define, "")
-        idc.MakeComm(pos, comment)
+        idc.set_cmt(pos, comment, 0)
         # Remove the ioctl from the valid list and add it to the invalid list to avoid 'find_all_ioctls' accidently re-indexing it.
         ioctl_tracker.remove_ioctl(pos, code)
 
@@ -335,12 +340,12 @@ class WinDriverHooks(idaapi.UI_Hooks):
         if tft != idaapi.BWN_DISASM:
             return
 
-        pos = idc.ScreenEA()
+        pos = idc.get_screen_ea()
         register_dynamic_action(form, popup, 'Decode All IOCTLs in Function', DecodeAllHandler())
         register_dynamic_action(form, popup, 'Decode IOCTLs using Angr', DecodeAngrHandler())
 		# If the second argument to the current selected instruction is an immediately
         # then give the option to decode it.
-        if idc.GetOpType(pos, 1) == 5:
+        if idc.get_operand_type(pos, 1) == 5:
             register_dynamic_action(form, popup, 'Decode IOCTL', DecodeHandler())
             if pos in ioctl_tracker.ioctl_locs:
                 register_dynamic_action(form, popup, 'Invalid IOCTL', InvalidHandler())

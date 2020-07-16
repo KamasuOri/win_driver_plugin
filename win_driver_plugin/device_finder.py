@@ -5,9 +5,10 @@ import re
 import collections
 import idc
 import logging
+import ida_nalt
 
 ASCII_BYTE = " !\"#\$%&\'\(\)\*\+,-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\]\^_`abcdefghijklmnopqrstuvwxyz\{\|\}\\\~\t"
-UNICODE_RE_4 = re.compile(b"((?:[%s]\x00){%d,})" % (ASCII_BYTE, 4))
+UNICODE_RE_4 = re.compile(b"((?:[%s]\x00){%d,})" % (ASCII_BYTE.encode(), 4))
 REPEATS = ["A", "\x00", "\xfe", "\xff"]
 SLICE_SIZE = 4096
 
@@ -49,7 +50,8 @@ def extract_unicode_strings(buf, n=4):
 def get_unicode_device_names():
     """Returns all Unicode strings within the binary currently being analysed in IDA which might be device names"""
 
-    path = idc.GetInputFile()
+    #path = idc.GetInputFile()
+    path = idc.get_input_file_path()
     min_length = 4
     possible_names = set()
     with open(path, "rb") as f:
@@ -69,29 +71,29 @@ def find_unicode_device_name():
     if len(possible_names) == 1 or len(possible_names) == 2:
         if '\\Device\\' in possible_names or '\\DosDevices\\' in possible_names:
             if len(possible_names) == 1:
-                print "The Device prefix was found but no full device paths, the device name is likely obfuscated or created on the stack."
+                print("The Device prefix was found but no full device paths, the device name is likely obfuscated or created on the stack.")
                 return False
             elif '\\Device\\' in possible_names and '\\DosDevices\\' in possible_names:
-                print "The Device prefixs were found but no full device paths, the device name is likely obfuscated or created on the stack."
+                print("The Device prefixs were found but no full device paths, the device name is likely obfuscated or created on the stack.")
                 return False
             else:
-                print "Potential device name: "
+                print("Potential device name: ")
                 for i in possible_names:
                     if i != '\\Device\\' and i != '\\DosDevices\\':
-                        print i
+                        print(i)
             return True
         else:
-            print "Potential device names: "
+            print("Potential device names: ")
             for i in possible_names:
-                print i
+                print(i)
             return True
     elif len(possible_names) > 2:
-        print "Possible devices names found:"
+        print("Possible devices names found:")
         for i in possible_names:
-            print "\t" + i
+            print("\t" + i)
         return True
     else:
-        print "No potential device names found - it may be obfuscated or created on the stack in some way."
+        print("No potential device names found - it may be obfuscated or created on the stack in some way.")
         return False
 
 
@@ -102,7 +104,7 @@ def search():
     """
 
     if not find_unicode_device_name():
-        print "Unicode device name not found, attempting to find obfuscated and stack based strings."
+        print("Unicode device name not found, attempting to find obfuscated and stack based strings.")
         try:
             import floss
             import floss.identification_manager
@@ -110,7 +112,7 @@ def search():
             import floss.stackstrings
             import viv_utils
         except ImportError:
-            print "Please install FLOSS to continue, see: https://github.com/fireeye/flare-floss/"
+            print("Please install FLOSS to continue, see: https://github.com/fireeye/flare-floss/")
             return
         logging.basicConfig() #To avoid logger handler not found errors, from https://github.com/fireeye/flare-floss/blob/66f67a49a38ae028a5e86f1de743c384d5271901/scripts/idaplugin.py#L154
         logging.getLogger('vtrace.platforms.win32').setLevel(logging.ERROR)
@@ -118,8 +120,8 @@ def search():
 
         try:
             vw = viv_utils.getWorkspace(sample_file_path, should_save=False)
-        except Exception, e:
-            print("Vivisect failed to load the input file: {0}".format(e.message))
+        except Exception as e:
+            print("Vivisect failed to load the input file: {0}".format(e.message))            
             return
 
         functions = set(vw.getFunctions())
@@ -134,8 +136,8 @@ def search():
         if len(decoded_strings) > 0:
             for i in decoded_strings:
                 device_names.add(str(i.s))
-            print "Potential device names from obfuscated or stack strings:"
+            print("Potential device names from obfuscated or stack strings:")
             for i in device_names:
-                print i
+                print(i)
         else:
-            print "No obfuscated or stack strings found :("
+            print("No obfuscated or stack strings found :(")

@@ -1,6 +1,10 @@
 import idc 
 import idaapi
 import idautils
+import sys
+
+if sys.version_info[0] == 3:
+    xrange = range
 
 def find_pool_tags():
 	""" Dirty hack around IDA's type information, find references to tag using functions then the comment marking the tag 

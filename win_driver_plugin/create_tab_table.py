@@ -1,9 +1,11 @@
 import idc
 import idaapi
-from idaapi import Choose2
-import driverlib
+#from idaapi i#mport Choose2
+from ida_kernwin import Choose
+import win_driver_plugin.driverlib as driverlib
 import ctypes
-import ioctl_decoder as ioctl_decoder
+import win_driver_plugin.ioctl_decoder as ioctl_decoder
+import ida_nalt
 
 # yoinked from https://stackoverflow.com/a/25678113
 OpenClipboard = ctypes.windll.user32.OpenClipboard
@@ -28,9 +30,10 @@ class stop_unload_handler_t(idaapi.action_handler_t):
 
     def activate(self, ctx):
         if ctypes.windll.shell32.IsUserAnAdmin() == 0:
-            print "Admin privileges required"
+            print("Admin privileges required")
             return
-        name = idc.GetInputFile().split('.')[0]
+        #name = idc.GetInputFile().split('.')[0]
+        name = idc.get_input_file_path().split('.')[0]
         driver = driverlib.Driver(idc.GetInputFilePath(),name)
         driver.stop()
         driver.unload()
@@ -44,7 +47,7 @@ class start_load_handler_t(idaapi.action_handler_t):
 
     def activate(self, ctx):
         if ctypes.windll.shell32.IsUserAnAdmin() == 0:
-            print "Admin privileges required"
+            print("Admin privileges required")
             return
         name = idc.GetInputFile().split('.')[0]
         driver = driverlib.Driver(idc.GetInputFilePath(),name)
@@ -112,10 +115,10 @@ class remove_ioctl(idaapi.action_handler_t):
 	def update(self, ctx):
 		return idaapi.AST_ENABLE_FOR_FORM if idaapi.is_chooser_tform(ctx.form_type) else idaapi.AST_DISABLE_FOR_FORM
 
-class MyChoose2(Choose2):
-
+#class MyChoose2(Choose2):
+class MyChoose2(Choose):
     def __init__(self, title, items, flags=0, width=None, height=None, embedded=False, modal=False):
-        Choose2.__init__(
+        Choose.__init__(
             self,
             title,
             [ ["Address", 5], ["Function", 5], ["Device", 15], ["Method", 15], ["Access", 30], ["C define", 100] ],
@@ -134,17 +137,15 @@ class MyChoose2(Choose2):
         pass
 
     def OnSelectLine(self, n):
-
-		item = self.items[n]
-
-		jump_ea = int(item[0], 16)
-		# Only jump for valid addresses
-		if idaapi.IDA_SDK_VERSION < 700:
-			valid_addr = idc.isEnabled(jump_ea)
-		else:
-			valid_addr = idc.is_mapped(jump_ea)
-		if valid_addr:
-			idc.Jump(jump_ea)
+        item = self.items[n]
+        jump_ea = int(item[0], 16)
+        # Only jump for valid addresses
+        if idaapi.IDA_SDK_VERSION < 700:
+            valid_addr = idc.isEnabled(jump_ea)
+        else:
+            valid_addr = idc.is_mapped(jump_ea)
+        if valid_addr:
+            idc.Jump(jump_ea)
 
     def OnGetLine(self, n):
         return self.items[n]
@@ -304,7 +305,7 @@ class DisplayIOCTLSForm(idaapi.Form):
         elif fid == self.sendIOCTL.id:
             pass
         else:
-            print fid
+            print(fid)
             
     def send_ioctl(self,fid):
         if not self.driver.handle:
