@@ -1,6 +1,10 @@
 # Windows Driver Plugin
 
-An IDA Pro plugin to help when working with IOCTL codes or reversing Windows drivers.
+An IDA Pro plugin to help when working with IOCTL codes or reversing Windows drivers. This version of the plugin was fixed for IDA 7.x.
+
+The original code for older versions of IDA can be found here:
+
+https://github.com/FSecureLABS/win_driver_plugin
 
 ## Installation
 
