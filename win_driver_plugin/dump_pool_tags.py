@@ -2,6 +2,7 @@ import idc
 import idaapi
 import idautils
 import sys
+import ida_nalt
 
 if sys.version_info[0] == 3:
     xrange = range
@@ -23,11 +24,11 @@ def find_pool_tags():
 		if name in funcs:
 			for xref in idautils.XrefsTo(ea):
 				call_addr = xref.frm
-				caller_name = idc.GetFunctionName(call_addr)
-				prev = idc.PrevHead(call_addr)
+				caller_name = idc.get_func_name(call_addr)
+				prev = idc.prev_head(call_addr)
 				for _ in range(10):
-					if idc.Comment(prev) == 'Tag' and idc.GetOpType(prev, 1) == 5:
-						tag_raw = idc.GetOperandValue(prev, 1)
+					if idc.get_cmt(prev,0) == 'Tag' and idc.get_operand_type(prev, 1) == 5:
+						tag_raw = idc.get_operand_value(prev, 1)
 						tag = ''
 						for i in range(3, -1, -1):
 							tag += chr((tag_raw >> 8 * i) & 0xFF)
@@ -36,17 +37,17 @@ def find_pool_tags():
 						else:
 							tags[tag] = set([caller_name])
 						break
-					prev = idc.PrevHead(prev)
+					prev = idc.prev_head(prev)
 		return True
 	
-	nimps = idaapi.get_import_module_qty()
+	nimps = ida_nalt.get_import_module_qty()
 
 	for i in xrange(0, nimps):
-		name = idaapi.get_import_module_name(i)
+		name = ida_nalt.get_import_module_name(i)
 		if not name:
 			continue
 
-		idaapi.enum_import_names(i, imp_cb)
+		ida_nalt.enum_import_names(i, imp_cb)
 	return tags 
 	
 def get_all_pooltags():
@@ -55,7 +56,7 @@ def get_all_pooltags():
 	
 	tags = find_pool_tags()
 	out = ''
-	file_name = idaapi.get_root_filename()
+	file_name = ida_nalt.get_root_filename()
 	for tag in tags.keys():
 		desc = 'Called by: '
 		desc += ', '.join(tags[tag])

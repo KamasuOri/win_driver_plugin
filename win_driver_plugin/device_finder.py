@@ -14,7 +14,6 @@ SLICE_SIZE = 4096
 
 String = collections.namedtuple("String", ["s", "offset"])
 
-
 def buf_filled_with(buf, character):
     """Returns true if the buffer is filled with the recurring character"""
 
@@ -96,13 +95,12 @@ def find_unicode_device_name():
         print("No potential device names found - it may be obfuscated or created on the stack in some way.")
         return False
 
-
 def search():
     """
     Attempts to find potential device names in the currently opened binary, it starts by searching for Unicode device names,
     if this fails then it utilises FLOSS to search for stack based and obfuscated strings.
     """
-
+    
     if not find_unicode_device_name():
         print("Unicode device name not found, attempting to find obfuscated and stack based strings.")
         try:
@@ -141,3 +139,4 @@ def search():
                 print(i)
         else:
             print("No obfuscated or stack strings found :(")
+

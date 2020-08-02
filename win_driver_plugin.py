@@ -20,6 +20,9 @@ import idc
 import idaapi
 import idautils
 import ida_nalt
+import ida_kernwin
+import ida_gdl
+import ida_idaapi
 
 import win_driver_plugin.device_finder as device_finder
 import win_driver_plugin.ioctl_decoder as ioctl_decoder
@@ -28,11 +31,11 @@ import win_driver_plugin.device_type as device_type
 import win_driver_plugin.angr_analysis as angr_analysis
 import win_driver_plugin.dump_pool_tags as dump_pool_tags
 
-class UiAction(idaapi.action_handler_t):
+class UiAction(ida_kernwin.action_handler_t):
     """Simple wrapper class for creating action handlers which add options to menu's and are triggered via hot keys"""
 
     def __init__(self, id, name, tooltip, menuPath, callback, shortcut):
-        idaapi.action_handler_t.__init__(self)
+        ida_kernwin.action_handler_t.__init__(self)
         self.id = id
         self.name = name
         self.tooltip = tooltip
@@ -41,7 +44,7 @@ class UiAction(idaapi.action_handler_t):
         self.shortcut = shortcut
 
     def registerAction(self):
-        action_desc = idaapi.action_desc_t(
+        action_desc = ida_kernwin.action_desc_t(
             self.id,
             self.name,
             self,
@@ -49,22 +52,22 @@ class UiAction(idaapi.action_handler_t):
             self.tooltip,
             0
         )
-        if not idaapi.register_action(action_desc):
+        if not ida_kernwin.register_action(action_desc):
             return False
-        if not idaapi.attach_action_to_menu(self.menuPath, self.id, 0):
+        if not ida_kernwin.attach_action_to_menu(self.menuPath, self.id, 0):
             return False
         return True
 
     def unregisterAction(self):
-        idaapi.detach_action_from_menu(self.menuPath, self.id)
-        idaapi.unregister_action(self.id)
+        ida_kernwin.detach_action_from_menu(self.menuPath, self.id)
+        ida_kernwin.unregister_action(self.id)
 
     def activate(self, ctx):
         self.callback()
         return 1
 
     def update(self, ctx):
-        return idaapi.AST_ENABLE_ALWAYS
+        return ida_kernwin.AST_ENABLE_ALWAYS
 
 
 def make_comment(pos, string):
@@ -115,17 +118,17 @@ def find_all_ioctls():
     """
     From the currently selected address attempts to traverse all blocks inside the current function to find all immediate values which
     are used for a comparison/sub immediately before a jz. Returns a list of address, second operand pairs.
-    """
+    """    
     
     ioctls = []
     # Find the currently selected function and get a list of all of it's basic blocks
     addr = idc.get_screen_ea()
     f = idaapi.get_func(addr)
-    fc = idaapi.FlowChart(f, flags=idaapi.FC_PREDS)
+    fc = ida_gdl.FlowChart(f, flags=ida_gdl.FC_PREDS)
     for block in fc:
         # grab the last two instructions in the block 
-        last_inst = idc.PrevHead(block.end_ea)
-        penultimate_inst = idc.PrevHead(last_inst)
+        last_inst = idc.prev_head(block.end_ea)
+        penultimate_inst = idc.prev_head(last_inst)
         # If the penultimate instruction is cmp or sub against an immediate value immediately preceding a 'jz' 
         # then it's a decent guess that it's an IOCTL code (if this is a dispatch function)
         if idc.print_insn_mnem(penultimate_inst) in ['cmp', 'sub'] and idc.get_operand_type(penultimate_inst, 1) == 5:
@@ -153,7 +156,7 @@ def decode_all_ioctls():
 def decode_angr():
 	"""Attempts to locate all the IOCTLs in a function and decode them all using symbolic execution"""
 	
-	path = idaapi.get_input_file_path()
+	path = ida_nalt.get_input_file_path()
 	addr = idc.get_screen_ea()
 	ioctls = angr_analysis.angr_find_ioctls(path, addr)
 	track_ioctls(ioctls)
@@ -168,14 +171,14 @@ def get_position_and_translate():
     if idc.get_operand_type(pos, 1) != 5:   # Check the second operand to the instruction is an immediate
         return
     
-    value = get_operand_value(pos)
+    value = idc.get_operand_value(pos)
     ioctl_tracker.add_ioctl(pos, value)
     define = ioctl_decoder.get_define(value)
     make_comment(pos, define)
     # Print summary table each time a new IOCTL code is decoded
     ioctls = []
     for inst in ioctl_tracker.ioctl_locs:
-        value = get_operand_value(inst)
+        value = idc.get_operand_value(inst)
         ioctls.append((inst, value))
     ioctl_tracker.print_table(ioctls)
 
@@ -332,11 +335,11 @@ def register_dynamic_action(form, popup, description, handler):
     idaapi.attach_dynamic_action_to_popup(form, popup, action, 'Driver Plugin/')
 
 
-class WinDriverHooks(idaapi.UI_Hooks):
+class WinDriverHooks(ida_kernwin.UI_Hooks):
     """Installs hook function which is triggered when popup forms are created and adds extra menu options if it is the right-click disasm view menu"""
 
-    def finish_populating_tform_popup(self, form, popup):
-        tft = idaapi.get_tform_type(form)
+    def finish_populating_widget_popup(self, form, popup):        
+        tft = ida_kernwin.get_widget_type(form)
         if tft != idaapi.BWN_DISASM:
             return
 
@@ -353,7 +356,7 @@ class WinDriverHooks(idaapi.UI_Hooks):
             register_dynamic_action(form, popup, 'Show All IOCTLs', ShowAllHandler())
 
 
-class WinDriverPlugin(idaapi.plugin_t):
+class WinDriverPlugin(ida_idaapi.plugin_t):
     """Main plugin class, registers the various menu items, hot keys and menu hooks as well as initialising the plugin's global state."""
 
     flags = idaapi.PLUGIN_UNL
@@ -362,8 +365,9 @@ class WinDriverPlugin(idaapi.plugin_t):
     wanted_name = 'Windows IOCTL code decoder'
     # No hot key for the plugin - individuals actions have their own
     wanted_hotkey = ""
-
+    
     def init(self):
+        print("Initializing")
         if device_type.is_driver():
             print("Driver type: {}".format(device_type.driver_type()))
         global ioctl_tracker
@@ -416,5 +420,5 @@ class WinDriverPlugin(idaapi.plugin_t):
         pass
 
 
-def PLUGIN_ENTRY():
+def PLUGIN_ENTRY():    
     return WinDriverPlugin()
